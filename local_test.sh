@@ -7,6 +7,7 @@ gpu_num=${#gpus[@]}
 
 config=projects/configs/$1.py
 checkpoint=$2
+shift 2
 
 if python -c "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)"; then
     extra_cfg_options=()
@@ -26,12 +27,14 @@ then
         ${gpu_num} \
         --eval bbox \
         "${extra_cfg_options[@]}" \
-        $@
+        "$@"
 else
     python ./tools/test.py \
         ${config} \
         ${checkpoint} \
         --eval bbox \
+        --show \
+        --show-dir vis_results \
         "${extra_cfg_options[@]}" \
-        $@
+        "$@"
 fi

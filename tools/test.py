@@ -14,13 +14,26 @@ from mmcv.runner import (
     wrap_fp16_model,
 )
 
-from mmdet.apis import single_gpu_test, multi_gpu_test, set_random_seed
+from mmdet.apis import multi_gpu_test, set_random_seed
 from mmdet.datasets import replace_ImageToTensor, build_dataset
 from mmdet.datasets import build_dataloader as build_dataloader_origin
 from mmdet.models import build_detector
 
 from projects.mmdet3d_plugin.datasets.builder import build_dataloader
 from projects.mmdet3d_plugin.apis.test import custom_multi_gpu_test
+
+
+def custom_single_gpu_test(model, data_loader):
+    model.eval()
+    outputs = []
+    for data in data_loader:
+        with torch.no_grad():
+            result = model(return_loss=False, rescale=True, **data)
+        if isinstance(result, list):
+            outputs.extend(result)
+        else:
+            outputs.append(result)
+    return outputs
 
 
 def parse_args():
@@ -255,7 +268,7 @@ def main():
         outputs = torch.load(args.result_file)
     elif not distributed:
         model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
+        outputs = custom_single_gpu_test(model, data_loader)
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
@@ -304,6 +317,28 @@ def main():
             print(eval_kwargs)
             results_dict = dataset.evaluate(outputs, **eval_kwargs)
             print(results_dict)
+
+            if args.show or args.show_dir:
+                eval_kwargs = cfg.get("evaluation", {}).copy()
+                for key in [
+                    "interval",
+                    "tmpdir",
+                    "start",
+                    "gpu_collect",
+                    "save_best",
+                    "rule",
+                ]:
+                    eval_kwargs.pop(key, None)
+                eval_kwargs.pop("out_dir", None)
+                eval_kwargs.pop("pipeline", None)
+                eval_kwargs.update(kwargs)
+                dataset.show(
+                    outputs,
+                    save_dir=args.show_dir,
+                    show=args.show,
+                    pipeline=cfg.get("evaluation", {}).get("pipeline"),
+                    **eval_kwargs,
+                )
 
 
 if __name__ == "__main__":
